@@ -30,7 +30,7 @@ menu = st.sidebar.radio(
 # -------------------------------
 @st.cache_data
 def load_data():
-    df = pd.read_csv("your_dataset.csv")  # change to your dataset
+    df = pd.read_csv("global_unemployment_data.csv")  # change to your dataset
     return df
 
 df = load_data()
@@ -155,4 +155,5 @@ elif menu == "Industry Impact":
     Sectors with higher AI exposure may require targeted **reskilling programs**.
     Consider policy measures to support **high-risk sectors** such as retail and data entry.
     """)
+
 
