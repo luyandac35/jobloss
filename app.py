@@ -1,159 +1,113 @@
-# app.py
+# ============================================
+# 🌍 Global Unemployment Dashboard & Forecast
+# ============================================
 
 import streamlit as st
 import pandas as pd
 import numpy as np
+import plotly.express as px
 import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report, accuracy_score
 from prophet import Prophet
 from prophet.plot import plot_plotly
-import plotly.express as px
 
-# -------------------------------
-# Page Setup
-# -------------------------------
-st.set_page_config(page_title="AI & Employment Dashboard", layout="wide")
-st.title("📊 AI & Employment Impact Dashboard")
+# --- 🧩 Compatibility Fix for NumPy >= 2.0 ---
+if not hasattr(np, 'float'):
+    np.float = np.float64
+if not hasattr(np, 'int'):
+    np.int = np.int64
+if not hasattr(np, 'object'):
+    np.object = object
+if not hasattr(np, 'bool'):
+    np.bool = bool
 
-# Sidebar navigation
-menu = st.sidebar.radio(
-    "Navigate Dashboard",
-    ["Data Overview", "Job Loss Prediction", "Employment Forecasting", "Industry Impact"]
+# --- 🌟 Streamlit Page Setup ---
+st.set_page_config(page_title="Global Unemployment Dashboard", layout="wide", page_icon="📈")
+
+# --- 🧭 Header Section ---
+st.title("📊 Global Unemployment Analysis & Forecasting Dashboard")
+st.markdown("""
+This interactive dashboard visualizes **global unemployment trends** and uses 
+**Prophet** to forecast future unemployment rates.
+""")
+
+# --- 📤 Upload or Use Default Dataset ---
+uploaded_file = st.file_uploader("Upload your dataset (CSV)", type=["csv"])
+
+if uploaded_file:
+    df = pd.read_csv(uploaded_file)
+else:
+    df = pd.read_csv("global_unemployment_data.csv")
+
+st.subheader("🗂 Dataset Preview")
+st.dataframe(df.head())
+
+# --- 🧹 Basic Cleaning ---
+df.columns = df.columns.str.strip()
+if 'Year' in df.columns:
+    df['Year'] = pd.to_datetime(df['Year'], errors='coerce')
+
+# --- 🌍 Country Selector ---
+countries = df['Country Name'].unique().tolist()
+selected_country = st.selectbox("Select a Country", countries, index=0)
+
+country_data = df[df['Country Name'] == selected_country]
+
+st.markdown(f"### 📅 Historical Unemployment Rate for **{selected_country}**")
+
+# --- 📈 Line Chart (Historical Trend) ---
+fig_line = px.line(
+    country_data,
+    x='Year',
+    y='Unemployment Rate',
+    title=f"{selected_country} — Unemployment Rate Over Time",
+    markers=True
 )
+fig_line.update_traces(line_color='#007BFF')
+st.plotly_chart(fig_line, use_container_width=True)
 
-# -------------------------------
-# Load Data
-# -------------------------------
-@st.cache_data
-def load_data():
-    df = pd.read_csv("global_unemployment_data.csv")  # change to your dataset
-    return df
+# --- 🥧 Pie Chart (Regional or Gender Split, if available) ---
+if 'Gender' in df.columns:
+    gender_data = df[df['Country Name'] == selected_country].groupby('Gender')['Unemployment Rate'].mean().reset_index()
+    fig_pie = px.pie(gender_data, values='Unemployment Rate', names='Gender', title="Unemployment by Gender")
+    st.plotly_chart(fig_pie, use_container_width=True)
 
-df = load_data()
+# --- 🧾 Summary Statistics ---
+st.subheader("📋 Summary Statistics")
+st.write(country_data.describe())
 
-# -------------------------------
-# DATA OVERVIEW
-# -------------------------------
-if menu == "Data Overview":
-    st.header("🧭 Data Overview & Summary")
-    st.write("This section allows users to explore data structure, missing values, and summary statistics.")
+# --- 🔮 Prophet Forecasting ---
+st.markdown("## 🔮 Forecasting Future Unemployment Trends")
 
-    st.subheader("🔍 Dataset Preview")
-    st.dataframe(df.head())
+# Prepare data for Prophet
+forecast_df = country_data[['Year', 'Unemployment Rate']].rename(columns={'Year': 'ds', 'Unemployment Rate': 'y'})
+forecast_df = forecast_df.dropna()
+forecast_df['ds'] = pd.to_datetime(forecast_df['ds'])
 
-    st.subheader("📈 Summary Statistics")
-    st.dataframe(df.describe())
-
-    st.subheader("🧹 Missing Values")
-    st.write(df.isnull().sum())
-
-    st.subheader("📊 Distribution by Key Variables")
-    selected_col = st.selectbox("Select column to visualize:", df.columns)
-    fig, ax = plt.subplots()
-    sns.histplot(df[selected_col], kde=True, ax=ax)
-    st.pyplot(fig)
-
-# -------------------------------
-# JOB LOSS PREDICTION (Classification)
-# -------------------------------
-elif menu == "Job Loss Prediction":
-    st.header("🤖 Task 1 — Predicting Job Loss Risk")
-
-    target_col = st.selectbox("Select Target Column (Categorical)", df.columns)
-    X = df.drop(columns=[target_col])
-    y = df[target_col]
-
-    # Encode categorical data
-    for col in X.select_dtypes(include='object').columns:
-        X[col] = LabelEncoder().fit_transform(X[col])
-
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
-
-    # Scale numeric features
-    scaler = StandardScaler()
-    X_train = scaler.fit_transform(X_train)
-    X_test = scaler.transform(X_test)
-
-    # Train Random Forest
-    model = RandomForestClassifier(random_state=42)
-    model.fit(X_train, y_train)
-    y_pred = model.predict(X_test)
-
-    # Evaluation
-    accuracy = accuracy_score(y_test, y_pred)
-    st.subheader("🎯 Model Evaluation")
-    st.write(f"**Random Forest Accuracy:** {accuracy:.2f}")
-
-    st.text("Classification Report:")
-    st.text(classification_report(y_test, y_pred))
-
-    # Feature Importance
-    st.subheader("🔥 Feature Importance")
-    importance = pd.Series(model.feature_importances_, index=df.drop(columns=[target_col]).columns)
-    imp_df = importance.sort_values(ascending=False).head(10).reset_index()
-    imp_df.columns = ["Feature", "Importance"]
-
-    fig = px.bar(imp_df, x="Feature", y="Importance", title="Top 10 Important Features (Random Forest Classifier)")
-    st.plotly_chart(fig, use_container_width=True)
-
-# -------------------------------
-# FORECASTING EMPLOYMENT TRENDS
-# -------------------------------
-elif menu == "Employment Forecasting":
-    st.header("📈 Task 2 — Forecasting Employment Trends (Prophet)")
-
-    st.write("Use Prophet to forecast employment/unemployment trends over time.")
-
-    date_col = st.selectbox("Select Date Column", df.columns)
-    value_col = st.selectbox("Select Value Column to Forecast", df.columns)
-
-    forecast_df = df[[date_col, value_col]].rename(columns={date_col: "ds", value_col: "y"})
-    model = Prophet()
+if not forecast_df.empty:
+    model = Prophet(yearly_seasonality=True)
     model.fit(forecast_df)
 
-    future = model.make_future_dataframe(periods=12, freq="M")
+    future = model.make_future_dataframe(periods=5, freq='Y')
     forecast = model.predict(future)
 
-    st.subheader("🔮 Forecast Results")
-    fig1 = plot_plotly(model, forecast)
-    st.plotly_chart(fig1, use_container_width=True)
+    # Display forecast data
+    st.write("### Forecast Results (Next 5 Years)")
+    st.dataframe(forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].tail())
 
-    st.subheader("📊 Forecast Components")
-    fig2 = model.plot_components(forecast)
-    st.pyplot(fig2)
+    # Plot forecast
+    fig_forecast = plot_plotly(model, forecast)
+    fig_forecast.update_layout(title="Forecasted Unemployment Rate", xaxis_title="Year", yaxis_title="Predicted Rate (%)")
+    st.plotly_chart(fig_forecast, use_container_width=True)
 
-# -------------------------------
-# INDUSTRY IMPACT ANALYSIS
-# -------------------------------
-elif menu == "Industry Impact":
-    st.header("🏭 Task 3 — Analysing Industry Impact (Disparities / Segmentation)")
+    # Components (Trend, Yearly)
+    st.write("### Forecast Components")
+    st.pyplot(model.plot_components(forecast))
+else:
+    st.warning("No valid data available for forecasting. Please check the dataset format.")
 
-    st.write("This section highlights which sectors and demographics are most exposed to AI-related displacement risks.")
-
-    sector_col = st.selectbox("Select Sector Column", df.columns)
-    risk_col = st.selectbox("Select Risk Column", df.columns)
-
-    impact_df = df.groupby(sector_col)[risk_col].mean().sort_values(ascending=False).reset_index()
-
-    fig = px.bar(
-        impact_df,
-        x=sector_col,
-        y=risk_col,
-        title="Average Job Loss Risk by Sector",
-        color=risk_col,
-        color_continuous_scale="Reds"
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.markdown("""
-    ### 🧩 Equity Notes
-    Sectors with higher AI exposure may require targeted **reskilling programs**.
-    Consider policy measures to support **high-risk sectors** such as retail and data entry.
-    """)
-
-
+# --- 🧠 Footer ---
+st.markdown("""
+---
+✅ **Developed by Simba | Powered by Prophet, Plotly & Streamlit**  
+📅 Data Source: Global Unemployment Dataset
+""")
